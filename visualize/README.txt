@@ -1,4 +1,8 @@
 change log:
+version February 4, 2020
+	+ substituted juicebox_tools.jar for a version with deep learning based dump
+	+ made appropriate modifications in juicebox_tools.sh
+—————————————————————
 version december 14, 2016
 	+ substituted juicebox_tools.jar for a version with working -r and -n flags
 	+ made appropriate modifications in juicebox_tools.sh
