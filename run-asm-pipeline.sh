@@ -26,7 +26,7 @@
 # 3D-DNA de novo genome assembly pipeline.
 #
 
-version=180922
+version=20200204
 
 echo `readlink -f $0`" "$*
 
@@ -75,7 +75,7 @@ OPTIONS:
 -m|--mode haploid/diploid			Runs in specific mode, either haploid or diploid (default is haploid).
 -i|--input input_size			Specifies threshold input contig/scaffold size (default is 15000). Contigs/scaffolds smaller than input_size are going to be ignored.
 -r|--rounds number_of_edit_rounds			Specifies number of iterative rounds for misjoin correction (default is 2).
--s|--stage stage					Fast forward to later assembly steps, can be polish, split, seal, merge and finalize.
+-s|--stage stage					Fast forward to later assembly steps, can be polish, split, seal, merge and finalize. Can also be just a specific stage.
 
 ADDITIONAL OPTIONS:
 **scaffolder**
@@ -197,11 +197,13 @@ default_merger_lastz_options=\"--gfextend\ --gapped\ --chain=200,200\"
 gap_size=500	# default length of gaps to be added between scaffolded sequences in the chrom-length scaffolds
 
 # supplementary options
-stage=""	# by default run full pipeline
+stage="full"	# by default run full pipeline
+round_iter=0    # only used with scaffold-only stage
 early=false
 fast=false
 sort_output=false
 build_gapped_map=false
+use_neural_net=false
 
 ############### HANDLE OPTIONS ###############
 
@@ -210,11 +212,11 @@ while :; do
 		-h)
 			echo "$USAGE_short" >&1
 			exit 0
-        ;;
-  		--help)
+		;;
+		--help)
 			echo "$USAGE_long" >&1
 			exit 0
-        ;;
+		;;
 
 ## SHORT MENU OPTIONS
 		-m|--mode) OPTARG=$2
@@ -227,29 +229,39 @@ while :; do
 				diploid="true"
 			fi
 			shift
-    	;;
-        -r|--rounds) OPTARG=$2
-        	re='^[0-9]+$'
+		;;
+		-r|--rounds) OPTARG=$2
+			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]] && [[ $OPTARG -ge 0 ]]; then
 				echo " -r|--rounds flag was triggered, will run $OPTARG round(s) of misjoin correction." >&1
 				MAX_ROUNDS=$OPTARG
 			else
 				echo ":( Wrong syntax for number of iterative rounds of misjoin correction. Using the default value ${MAX_ROUNDS}." >&2
 			fi
-        	shift
-        ;;
-        -i|--input) OPTARG=$2
-        	re='^[0-9]+$'
+			shift
+		;;
+		--round-num) OPTARG=$2
+			re='^[0-9]+$'
+			if [[ $OPTARG =~ $re ]]; then
+				echo " --round-num flag was triggered, will run iteration $OPTARG of misjoin correction." >&1
+				round_iter=$OPTARG
+			else
+				echo ":( Wrong syntax for iteration of round of misjoin correction. Using the default value ${MAX_ROUNDS}." >&2
+			fi
+			shift
+		;;
+		-i|--input) OPTARG=$2
+			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " -i|--input flag was triggered, filtering draft contigs/scaffolds smaller than $OPTARG." >&1
 				input_size=$OPTARG
 			else
 				echo ":( Wrong syntax for input size threshold. Using the default value ${input_size}." >&2
 			fi
-        	shift
-        ;;
+			shift
+		;;
 # scaffolder
-        -q|--mapq) OPTARG=$2 ##TODO: check that propagates consistently, not tested sufficiently
+		-q|--mapq) OPTARG=$2 ##TODO: check that propagates consistently, not tested sufficiently
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " -q|--mapq flag was triggered, scaffolding using reads with at least $OPTARG mapping quality." >&1
@@ -257,22 +269,22 @@ while :; do
 			else
 				echo ":( Wrong syntax for mapping quality. Using the default value ${mapq}." >&2
 			fi
-        	shift
-        ;;
+			shift
+		;;
 # organizational
 		-s|--stage) OPTARG=$2
-			if [ "$OPTARG" == "scaffold" ] || [ "$OPTARG" == "polish" ] || [ "$OPTARG" == "split" ] || [ "$OPTARG" == "seal" ] || [ "$OPTARG" == "merge" ] || [ "$OPTARG" == "finalize" ]; then
+			if [ "$OPTARG" == "scaffold" ] || [ "$OPTARG" == "polish" ] || [ "$OPTARG" == "split" ] || [ "$OPTARG" == "seal" ] || [ "$OPTARG" == "merge" ] || [ "$OPTARG" == "finalize" ] || [ "$OPTARG" == "scaffold-only" ] || [ "$OPTARG" == "polish-only" ] || [ "$OPTARG" == "split-only" ] || [ "$OPTARG" == "seal-only" ] || [ "$OPTARG" == "merge-only" ] || [ "$OPTARG" == "finalize-only" ]; then
 			echo " -s|--stage flag was triggered, fast-forwarding to \"$OPTARG\" pipeline section." >&1
 			stage=$OPTARG
 			else
 				echo ":( Wrong syntax for pipeline stage. Exiting!" >&2
 			fi
-        	shift
-        ;;
-        
+			shift
+		;;
+		
 ## LONG MENU OPTIONS
 # misjoin editor
-        --editor-saturation-centile) OPTARG=$2
+		--editor-saturation-centile) OPTARG=$2
 			re='^[0-9]+\.?[0-9]*$'
 			if [[ $OPTARG =~ $re ]] && [[ ${OPTARG%.*} -ge 0 ]] && ! [[ "$OPTARG" =~ ^0*(\.)?0*$ ]] && [[ $((${OPTARG%.*} + 1)) -le 100 ]]; then
 				echo " --editor-saturation-centile flag was triggered, misjoin editor saturation parameter set to ${OPTARG}%." >&1
@@ -280,19 +292,19 @@ while :; do
 			else
 				echo ":( Wrong syntax for misjoin editor saturation threshold. Using the default value ${editor_saturation_centile}%." >&2
 			fi
-        	shift
-        ;;
-        --editor-coarse-resolution) OPTARG=$2
-        	re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
+			shift
+		;;
+		--editor-coarse-resolution) OPTARG=$2
+			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --editor-coarse-resolution flag was triggered, misjoin editor coarse matrix resolution set to $OPTARG." >&1
 				editor_coarse_resolution=$OPTARG
 			else
 				echo ":( Wrong syntax for misjoin editor coarse matrix resolution. Using the default value ${editor_coarse_resolution}." >&2
 			fi
-        	shift
-        ;;
-        --editor-coarse-region) OPTARG=$2
+			shift
+		;;
+		--editor-coarse-region) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --editor-coarse-region flag was triggered, misjoin editor coarse resolution depletion region size set to $OPTARG." >&1
@@ -300,9 +312,9 @@ while :; do
 			else
 				echo ":( Wrong syntax for misjoin editor coarse resolution depletion region size. Using the default value ${editor_coarse_region}." >&2
 			fi
-        	shift
-        ;;
-        --editor-coarse-stringency) OPTARG=$2
+			shift
+		;;
+		--editor-coarse-stringency) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]] && [[ $OPTARG -gt 0 ]] && [[ $OPTARG -lt 100 ]]; then
 				echo " --editor-coarse-stringency flag was triggered, misjoin detection stringency parameter set to $OPTARG%." >&1
@@ -310,9 +322,9 @@ while :; do
 			else
 				echo ":( Wrong syntax for misjoin detection stringency parameter. Using the default value ${editor_coarse_stringency}%." >&2
 			fi
-        	shift
-        ;;
-        --editor-fine-resolution) OPTARG=$2
+			shift
+		;;
+		--editor-fine-resolution) OPTARG=$2
 			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --editor-fine-resolution flag was triggered, misjoin detection fine matrix resolution set to $OPTARG." >&1
@@ -320,50 +332,50 @@ while :; do
 			else
 				echo ":( Wrong syntax for misjoin editor fine matrix resolution. Using the default value ${editor_fine_resolution}." >&2
 			fi
-        	shift
-        ;;
-        --editor-repeat-coverage) OPTARG=$2
-        	re='^[0-9]+$'
+			shift
+		;;
+		--editor-repeat-coverage) OPTARG=$2
+			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]] && [[ $OPTARG -gt 0 ]]; then
 				echo " --editor-repeat-coverage flag was triggered, threshold repeat coverage parameter set to $OPTARG." >&1
 				editor_repeat_coverage=$OPTARG
 			else
 				echo ":( Wrong syntax for misjoin detection stringency parameter. Using the default value ${editor_repeat_coverage}." >&2
 			fi
-        	shift
-        ;;
+			shift
+		;;
 # polisher
-        --polisher-input-size) OPTARG=$2
-        	re='^[0-9]+$'
+		--polisher-input-size) OPTARG=$2
+			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --polisher-input-size flag was triggered, excluding scaffolds smaller than $OPTARG when polishing." >&1
 				polisher_input_size=$OPTARG
 			else
 				echo ":( Wrong syntax for polisher scaffold input size threshold. Using the default value ${polisher_input_size}." >&2
 			fi
-        	shift
-        ;;
-        --polisher-saturation-centile) OPTARG=$2
-        	re='^[0-9]+\.?[0-9]*$'
+			shift
+		;;
+		--polisher-saturation-centile) OPTARG=$2
+			re='^[0-9]+\.?[0-9]*$'
 			if [[ $OPTARG =~ $re ]] && [[ ${OPTARG%.*} -ge 0 ]] && ! [[ "$OPTARG" =~ ^0*(\.)?0*$ ]] && [[ $((${OPTARG%.*} + 1)) -le 100 ]]; then
 				echo " --polisher-saturation-centile flag was triggered, polisher saturation parameter set to ${OPTARG}%." >&1
 				polisher_saturation_centile=$OPTARG
 			else
 				echo ":( Wrong syntax for polisher saturation threshold. Using the default value ${polisher_saturation_centile}%." >&2
 			fi
-        	shift
-        ;;
-        --polisher-coarse-resolution) OPTARG=$2
-        	re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
+			shift
+		;;
+		--polisher-coarse-resolution) OPTARG=$2
+			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --polisher-coarse-resolution flag was triggered, polisher coarse matrix resolution set to $OPTARG." >&1
 				polisher_coarse_resolution=$OPTARG
 			else
 				echo ":( Wrong syntax for polisher coarse matrix resolution. Using the default value ${polisher_coarse_resolution}." >&2
 			fi
-        	shift
-        ;;
-        --polisher-coarse-region) OPTARG=$2
+			shift
+		;;
+		--polisher-coarse-region) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --polisher-coarse-region flag was triggered, polisher coarse resolution depletion region size set to $OPTARG." >&1
@@ -371,9 +383,9 @@ while :; do
 			else
 				echo ":( Wrong syntax for polisher coarse resolution depletion region size. Using the default value ${polisher_coarse_region}." >&2
 			fi
-        	shift
-        ;;
-        --polisher-coarse-stringency) OPTARG=$2
+			shift
+		;;
+		--polisher-coarse-stringency) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]] && [[ $OPTARG -gt 0 ]] && [[ $OPTARG -lt 100 ]]; then
 				echo " --polisher-coarse-stringency flag was triggered, polisher stringency parameter set to $OPTARG%." >&1
@@ -381,9 +393,9 @@ while :; do
 			else
 				echo ":( Wrong syntax for polisher stringency parameter. Using the default value ${polisher_coarse_stringency}%." >&2
 			fi
-        	shift
-        ;;
-        --polisher-fine-resolution) OPTARG=$2
+			shift
+		;;
+		--polisher-fine-resolution) OPTARG=$2
 			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --polisher-fine-resolution flag was triggered, polisher fine matrix resolution set to $OPTARG." >&1
@@ -391,41 +403,41 @@ while :; do
 			else
 				echo ":( Wrong syntax for polisher fine matrix resolution. Using the default value ${polisher_fine_resolution}." >&2
 			fi
-        	shift
-        ;;
+			shift
+		;;
 
 # splitter
-        --splitter-input-size) OPTARG=$2 ##TODO: should get rid of this, don't think I really need it
-        	re='^[0-9]+$'
+		--splitter-input-size) OPTARG=$2 ##TODO: should get rid of this, don't think I really need it
+			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --splitter-input-size flag was triggered, excluding scaffolds smaller than $OPTARG when splitting." >&1
 				splitter_input_size=$OPTARG
 			else
 				echo ":( Wrong syntax for splitter scaffold input size threshold. Using the default value ${splitter_input_size}." >&2
 			fi
-        	shift
-        ;;
-        --splitter-saturation-centile) OPTARG=$2
-        	re='^[0-9]+\.?[0-9]*$'
+			shift
+		;;
+		--splitter-saturation-centile) OPTARG=$2
+			re='^[0-9]+\.?[0-9]*$'
 			if [[ $OPTARG =~ $re ]] && [[ ${OPTARG%.*} -ge 0 ]] && ! [[ "$OPTARG" =~ ^0*(\.)?0*$ ]] && [[ $((${OPTARG%.*} + 1)) -le 100 ]]; then
 				echo " --splitter-saturation-centile flag was triggered, splitter saturation parameter set to ${OPTARG}%." >&1
 				splitter_saturation_centile=$OPTARG
 			else
 				echo ":( Wrong syntax for splitter saturation threshold. Using the default value ${splitter_saturation_centile}%." >&2
 			fi
-        	shift
-        ;;
-        --splitter-coarse-resolution) OPTARG=$2
-        	re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
+			shift
+		;;
+		--splitter-coarse-resolution) OPTARG=$2
+			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --splitter-coarse-resolution flag was triggered, splitter coarse matrix resolution set to $OPTARG." >&1
 				splitter_coarse_resolution=$OPTARG
 			else
 				echo ":( Wrong syntax for splitter coarse matrix resolution. Using the default value ${splitter_coarse_resolution}." >&2
 			fi
-        	shift
-        ;;
-        --splitter-coarse-region) OPTARG=$2
+			shift
+		;;
+		--splitter-coarse-region) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --splitter-coarse-region flag was triggered, splitter coarse resolution depletion region size set to $OPTARG." >&1
@@ -433,9 +445,9 @@ while :; do
 			else
 				echo ":( Wrong syntax for splitter coarse resolution depletion region size. Using the default value ${splitter_coarse_region}." >&2
 			fi
-        	shift
-        ;;
-        --splitter-coarse-stringency) OPTARG=$2
+			shift
+		;;
+		--splitter-coarse-stringency) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]] && [[ $OPTARG -gt 0 ]] && [[ $OPTARG -lt 100 ]]; then
 				echo " --splitter-coarse-stringency flag was triggered, splitter stringency parameter set to $OPTARG%." >&1
@@ -443,9 +455,9 @@ while :; do
 			else
 				echo ":( Wrong syntax for splitter stringency parameter. Using the default value ${splitter_coarse_stringency}%." >&2
 			fi
-        	shift
-        ;;
-        --splitter-fine-resolution) OPTARG=$2
+			shift
+		;;
+		--splitter-fine-resolution) OPTARG=$2
 			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --splitter-fine-resolution flag was triggered, splitter fine matrix resolution set to $OPTARG." >&1
@@ -453,12 +465,12 @@ while :; do
 			else
 				echo ":( Wrong syntax for splitter fine matrix resolution. Using the default value ${splitter_fine_resolution}." >&2
 			fi
-        	shift
-        ;;
-        
+			shift
+		;;
+		
 # merger
-        --merger-search-band) OPTARG=$2
-        	re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
+		--merger-search-band) OPTARG=$2
+			re='^[0-9]+$'	## TODO: specify/generalize re matrix resolutions size
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --merger-search-band flag was triggered, merger will look for alternative haplotypes to input contigs and scaffolds within $OPTARG bases from their suggested location in the assembly." >&1
 				merger_search_band=$OPTARG
@@ -466,9 +478,9 @@ while :; do
 				echo ":( Wrong syntax for alternative haplotype search region size. Exiting!" >&2
 				exit
 			fi
-        	shift
-        ;;
-        --merger-alignment-length) OPTARG=$2
+			shift
+		;;
+		--merger-alignment-length) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --merger-alignment-length flag was triggered, overlap length threshold for sequences to be recognized as alternative haplotypes is set to $OPTARG." >&1
@@ -477,9 +489,9 @@ while :; do
 				echo ":( Wrong syntax for alternative haplotype search alignment length. Exiting!" >&2
 				exit 1
 			fi
-        	shift
-        ;;
-        --merger-alignment-identity) OPTARG=$2
+			shift
+		;;
+		--merger-alignment-identity) OPTARG=$2
 			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --merger-alignment-identity flag was triggered, lastz alignment identity threshold for sequences to be recognized as alternative haplotypes is set to $OPTARG." >&1
@@ -488,10 +500,10 @@ while :; do
 				echo ":( Wrong syntax for alternative haplotype search alignment identity. Exiting!" >&2
 				exit 1
 			fi
-        	shift
-        ;;     
-        --merger-alignment-score) OPTARG=$2
-        	re='^[0-9]+$'
+			shift
+		;;     
+		--merger-alignment-score) OPTARG=$2
+			re='^[0-9]+$'
 			if [[ $OPTARG =~ $re ]]; then
 				echo " --merger-alignment-score flag was triggered, lastz alignment score threshold for sequences to be recognized as alternative haplotypes is set to $OPTARG." >&1
 				merger_alignment_score=$OPTARG
@@ -499,20 +511,20 @@ while :; do
 				echo ":( Wrong syntax for alternative haplotype search alignment score. Exiting!" >&2
 				exit
 			fi
-        	shift
-        ;;
-        --merger-lastz-options) OPTARG=$2
-        	re='^\"--.+\"$'
-        	if [[ $OPTARG =~ $re ]]; then
-        		echo " --merger-lastz-options flag was triggered, overlap length threshold for sequences to be recognized as alternative haplotypes is set to $OPTARG." >&1
-        		merger_lastz_options="$OPTARG"
+			shift
+		;;
+		--merger-lastz-options) OPTARG=$2
+			re='^\"--.+\"$'
+			if [[ $OPTARG =~ $re ]]; then
+				echo " --merger-lastz-options flag was triggered, overlap length threshold for sequences to be recognized as alternative haplotypes is set to $OPTARG." >&1
+				merger_lastz_options="$OPTARG"
 			else
 				echo ":( Wrong syntax for alternative haplotype search lastz option string. Exiting!" >&2
 				exit 1
 			fi
-        	shift
-        ;;
-        
+			shift
+		;;
+		
 # finalizer        
 		-g|--gap-size) OPTARG=$2
 			re='^[0-9]+$'
@@ -522,7 +534,7 @@ while :; do
 			else
 				echo ":( Wrong syntax for gap size parameter value. Using the default value ${gap_size}." >&2
 			fi
-        	shift 
+			shift 
 		;;
 # supplementary options:
 		-e|--early-exit)
@@ -540,6 +552,10 @@ while :; do
 		--build-gapped-map)
 			echo " --build-gapped-map was triggered, will build an additional hic file corresponding to final assembly with gaps added between draft sequences." >&1
 			build_gapped_map=true
+		;;
+		--use-neural-net)
+			echo " --use-neural-net was triggered, will use deep learning based misjoin detector." >&1
+			use_neural_net=true
 		;;
 # TODO: merger, sealer, etc options              
 		--) # End of all options
@@ -565,7 +581,7 @@ done
 [[ ${splitter_coarse_region} -le ${splitter_coarse_resolution} ]] && echo >&2 ":( Requested depletion region size ${splitter_coarse_region} and bin size ${splitter_coarse_resolution} parameters for splitter are incompatible. Run ${pipeline}/edit/run-mismatch-detector.sh -h for instructions. Exiting!" && exit 1
 [[ ${splitter_coarse_resolution} -le ${splitter_fine_resolution} ]] && echo >&2 ":( Requested mismatch localization resolution ${splitter_fine_resolution} and coarse search bin size ${splitter_coarse_resolution} parameters for splitter are incompatible. Run ${pipeline}/edit/run-mismatch-detector.sh -h for instructions. Exiting!" && exit 1
 
-([[ $diploid == "false" ]] && [[ ! -z ${merger_band_width} || ! -z ${merger_alignment_score} || ! -z ${merger_alignment_identity} || ! -z ${merger_alignment_length} || ! -z ${merger_lastz_options} || $stage == "merge" ]]) && echo >&2 ":( Some options were requested that are not compatible with default haploid mode. Please include --mode diploid in your option list or remove flag calls associated with the merge block of the pipeline. Exiting!" && exit 1
+([[ $diploid == "false" ]] && [[ ! -z ${merger_band_width} || ! -z ${merger_alignment_score} || ! -z ${merger_alignment_identity} || ! -z ${merger_alignment_length} || ! -z ${merger_lastz_options} || $stage == "merge" || $stage == "merge-only" ]]) && echo >&2 ":( Some options were requested that are not compatible with default haploid mode. Please include --mode diploid in your option list or remove flag calls associated with the merge block of the pipeline. Exiting!" && exit 1
 
 ## set merger default parameters if missing any
 if [[ $diploid == "true" ]]; then
@@ -581,8 +597,8 @@ fi
 ##	GNU Parallel Dependency
 parallel="false"
 if hash parallel 2>/dev/null; then
-        ver=`parallel --version | awk 'NR==1{print \$3}'`
-        [ $ver -ge 20150322 ] && parallel="true"
+	ver=`parallel --version | awk 'NR==1{print \$3}'`
+	[ $ver -ge 20150322 ] && parallel="true"
 fi
 [ $parallel == "false" ] && echo ":| WARNING: GNU Parallel version 20150322 or later not installed. We highly recommend to install it to increase performance. Starting pipeline without parallelization!" >&2
 
@@ -602,7 +618,7 @@ fi
 ## TODO: check file format
 
 if [ "$#" -ne 2 ]; then
-    echo >&2 "Illegal number of arguments. Please double check your input. Exiting!" && echo >&2 "$USAGE_short" && exit 1
+	echo >&2 "Illegal number of arguments. Please double check your input. Exiting!" && echo >&2 "$USAGE_short" && exit 1
 fi
 
 orig_fasta=$1
@@ -621,7 +637,7 @@ fi
 
 orig_mnd=${genomeid}.mnd.txt
 
-if [ "$stage" != "scaffold" ] && [ "$stage" != "polish" ] && [ "$stage" != "split" ] && [ "$stage" != "seal" ] && [ "$stage" != "merge" ] && [ "$stage" != "finalize" ] && [ "$fast" != "true" ]; then
+if [ "$stage" == "full" ] && [ "$fast" != "true" ]; then
 awk -f ${pipeline}/utils/generate-sorted-cprops-file.awk ${orig_fasta} > ${genomeid}.cprops
 fi
 
@@ -646,25 +662,36 @@ if [ $scale -ne 1 ]; then
 	splitter_fine_resolution=$((splitter_fine_resolution/scale))
 fi
 
+
+
+
+
+
 ############### ITERATIVE SCAFFOLDING/MISJOIN CORRECTION ###############
 
-if [ "$stage" != "polish" ] && [ "$stage" != "split" ] && [ "$stage" != "seal" ] && [ "$stage" != "merge" ] && [ "$stage" != "finalize" ]; then
+if [ "$stage" == "scaffold" ]; then
+	# from here on out, do everything
+	stage="full"
+fi
+
+if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
+
 	
 	ROUND=0
+	if ["$stage" == "scaffold-only"]; then
+		ROUND=$round_iter
+	fi
 
-	if ! [ "$fast" == "true" ]; then
-        if [ -f ${genomeid}.*.cprops ] || [ -f ${genomeid}.mnd.*.txt ] ; then
-            echo >&2 ":( Please remove or rename files ${genomeid}.*.cprops ${genomeid}.mnd.*.txt. Exiting!" && exit
-        else
-            ln -sf ${orig_cprops} ${genomeid}.${ROUND}.cprops
-            ln -sf ${orig_mnd} ${genomeid}.mnd.${ROUND}.txt
-        fi
+	if [ "$fast" == "false" ]; then
+		if [ -f ${genomeid}.*.cprops ] || [ -f ${genomeid}.mnd.*.txt ] ; then
+			echo >&2 ":( Please remove or rename files ${genomeid}.*.cprops ${genomeid}.mnd.*.txt. Exiting!" && exit
+		else
+			ln -sf ${orig_cprops} ${genomeid}.${ROUND}.cprops
+			ln -sf ${orig_mnd} ${genomeid}.mnd.${ROUND}.txt
+		fi
 	else
 		[ ! -f ${genomeid}.0.cprops ] || [ ! -f ${genomeid}.0.asm ] || [ ! -f ${genomeid}.0.hic ] || [ ! -f ${genomeid}.mnd.0.txt ] || [ ! -f ${genomeid}.0_asm.scaffold_track.txt ] || [ ! -f ${genomeid}.0_asm.superscaf_track.txt ] && echo >&2 ":( No early exit files are found. Please rerun the pipeline to include the round 0 assembly. Exiting!" && exit 1
 	fi
-
-	current_cprops=${genomeid}.${ROUND}.cprops
-	current_mnd=${genomeid}.mnd.${ROUND}.txt
 
 	echo "###############" >&1
 	echo "Starting iterating scaffolding with editing:" >&1
@@ -672,32 +699,45 @@ if [ "$stage" != "polish" ] && [ "$stage" != "split" ] && [ "$stage" != "seal" ]
 	# run liger
 	while true; do
 	{
+		current_cprops=${genomeid}.${ROUND}.cprops
+		current_mnd=${genomeid}.mnd.${ROUND}.txt
+
 		if !([ "$fast" == "true" ] && [ ${ROUND} -eq 0 ] ); then
-        # scaffold
-            echo "...starting round ${ROUND} of scaffolding:" >&1
-            bash ${pipeline}/scaffold/run-liger-scaffolder.sh -p ${parallel} -s ${input_size} -q ${mapq} ${current_cprops} ${current_mnd}
-            
-        # build a hic map of the resulting assembly
-            echo "...visualizing round ${ROUND} results:" >&1
-            bash ${pipeline}/visualize/run-asm-visualizer.sh -p ${parallel} -q ${mapq} -i -c ${current_cprops} ${genomeid}.${ROUND}.asm ${current_mnd}
+		# scaffold
+			echo "...starting round ${ROUND} of scaffolding:" >&1
+			bash ${pipeline}/scaffold/run-liger-scaffolder.sh -p ${parallel} -s ${input_size} -q ${mapq} ${current_cprops} ${current_mnd}
+			
+		# build a hic map of the resulting assembly
+			echo "...visualizing round ${ROUND} results:" >&1
+			bash ${pipeline}/visualize/run-asm-visualizer.sh -p ${parallel} -q ${mapq} -i -c ${current_cprops} ${genomeid}.${ROUND}.asm ${current_mnd}
 #            rm temp.${genomeid}.${ROUND}.asm_mnd.txt
 			rm ${current_mnd}
-        # early exit on round zero if requested
-            [ "$early" == "true" ] && exit 0
+		# early exit on round zero if requested
+			[ "$early" == "true" ] && exit 0
 		fi
 	# break out of the scaffold-mismatch detection loop if the max number of steps is reached
 		[ ${ROUND} -eq ${MAX_ROUNDS} ] && break
 
 	# annotate near-diagonal mismatches in the map
 		echo "...detecting misjoins in round ${ROUND} assembly:" >&1
-		bash ${pipeline}/edit/run-mismatch-detector.sh -p ${parallel} -c ${editor_saturation_centile} -w ${editor_coarse_resolution} -d ${editor_coarse_region} -k ${editor_coarse_stringency} -n ${editor_fine_resolution} ${genomeid}.${ROUND}.hic
+
+		if [ "$use_neural_net" == "true" ]; then
+			bash ${pipeline}/deep_edit/run-deep-mismatch-detector.sh -r 1000 
+			../3d-dna/deep_edit/run-deep-mismatch-detector.sh -r 1000 ${genomeid}.${ROUND}.hic
+		else
+			bash ${pipeline}/edit/run-mismatch-detector.sh -p ${parallel} -c ${editor_saturation_centile} -w ${editor_coarse_resolution} -d ${editor_coarse_region} -k ${editor_coarse_stringency} -n ${editor_fine_resolution} ${genomeid}.${ROUND}.hic
+
+			# store intermediate mismatch stuff	- not necessary
+			mv depletion_score_wide.wig depletion_score_wide.at.step.${ROUND}.wig
+			mv depletion_score_narrow.wig depletion_score_narrow.at.step.${ROUND}.wig
+			mv mismatch_wide.bed mismatch_wide.at.step.${ROUND}.bed
+			mv mismatch_narrow.bed mismatch_narrow.at.step.${ROUND}.bed
+
+		fi
+
 	# annotate repeats by coverage analysis
 		bash ${pipeline}/edit/run-coverage-analyzer.sh -w ${editor_coarse_resolution} -t ${editor_repeat_coverage} ${genomeid}.${ROUND}.hic
-	# store intermediate mismatch stuff	- not necessary
-		mv depletion_score_wide.wig depletion_score_wide.at.step.${ROUND}.wig
-		mv depletion_score_narrow.wig depletion_score_narrow.at.step.${ROUND}.wig
-		mv mismatch_wide.bed mismatch_wide.at.step.${ROUND}.bed
-		mv mismatch_narrow.bed mismatch_narrow.at.step.${ROUND}.bed
+	
 	# store intermediate repeat stuff - not necessary
 		mv coverage_wide.wig coverage_wide.at.step.${ROUND}.wig
 		mv repeats_wide.bed repeats_wide.at.step.${ROUND}.bed
@@ -721,6 +761,7 @@ if [ "$stage" != "polish" ] && [ "$stage" != "split" ] && [ "$stage" != "seal" ]
 
 	# move on to the next step	
 		ROUND=$((ROUND+1))
+
 		[ -f ${genomeid}".edits.txt" ] && cp ${genomeid}".edits.txt" "archive."${genomeid}".edits.at.step."$((ROUND-1))".txt" # not necessary
 	
 	# reconstruct current edits
@@ -735,10 +776,15 @@ if [ "$stage" != "polish" ] && [ "$stage" != "split" ] && [ "$stage" != "seal" ]
 	
 	# apply edits		
 		bash ${pipeline}/edit/apply-edits-prep-for-next-round.sh -p ${parallel} -r ${ROUND} ${genomeid}".edits.txt" ${orig_cprops} ${orig_mnd}
-		current_cprops=${genomeid}.${ROUND}.cprops
-		current_mnd=${genomeid}.mnd.${ROUND}.txt
+
+		[ "$stage" == "scaffold-only" ] && break
+
+	fi
+
 	}
 	done
+
+	[ "$stage" == "scaffold-only" ] && [  ${ROUND} -ne ${MAX_ROUNDS} ] && break
 
 	ln -sf ${genomeid}.${ROUND}.cprops ${genomeid}.resolved.cprops
 	ln -sf ${genomeid}.${ROUND}.asm ${genomeid}.resolved.asm
@@ -750,16 +796,22 @@ if [ "$stage" != "polish" ] && [ "$stage" != "split" ] && [ "$stage" != "seal" ]
 fi
 
 
-############### POLISHING ###############
 
-if [ "$stage" != "split" ] && [ "$stage" != "seal" ] && [ "$stage" != "merge" ] && [ "$stage" != "finalize" ]; then
+
+############### POLISHING ###############
+if [ "$stage" == "polish" ]; then
+	# from here on out, do everything
+	stage="full"
+fi
+
+if [ "$stage" == "full" ] || [ "$stage" == "polish-only" ] ]; then
 
 	[ ! -f ${genomeid}.resolved.cprops ] || [ ! -f ${genomeid}.resolved.asm ] || [ ! -f ${genomeid}.resolved.hic ] && echo >&2 ":( No resolved files are found. Please rerun the pipeline to include the scaffold segment. Exiting!" && exit 1
 
 	echo "###############" >&1
 	echo "Starting polish:" >&1
 	
-bash ${pipeline}/polish/run-asm-polisher.sh -p ${parallel} -q ${mapq} -j ${genomeid}.resolved.hic -a ${genomeid}.resolved_asm.scaffold_track.txt -b ${genomeid}.resolved_asm.superscaf_track.txt -s ${polisher_input_size} -c ${polisher_saturation_centile} -w ${polisher_coarse_resolution} -d ${polisher_coarse_region} -k ${polisher_coarse_stringency} -n ${polisher_fine_resolution} ${genomeid}.cprops ${orig_mnd} ${genomeid}.resolved.cprops ${genomeid}.resolved.asm
+	bash ${pipeline}/polish/run-asm-polisher.sh -p ${parallel} -q ${mapq} -j ${genomeid}.resolved.hic -a ${genomeid}.resolved_asm.scaffold_track.txt -b ${genomeid}.resolved_asm.superscaf_track.txt -s ${polisher_input_size} -c ${polisher_saturation_centile} -w ${polisher_coarse_resolution} -d ${polisher_coarse_region} -k ${polisher_coarse_stringency} -n ${polisher_fine_resolution} ${genomeid}.cprops ${orig_mnd} ${genomeid}.resolved.cprops ${genomeid}.resolved.asm
 	
 	mv ${genomeid}.resolved.polish.cprops ${genomeid}.polished.cprops
 	mv ${genomeid}.resolved.polish.asm ${genomeid}.polished.asm
@@ -778,10 +830,20 @@ bash ${pipeline}/polish/run-asm-polisher.sh -p ${parallel} -q ${mapq} -j ${genom
 
 fi
 
-############### SPLITTING ###############
 
-if [ "$stage" != "seal" ] && [ "$stage" != "merge" ] && [ "$stage" != "finalize" ]; then
-	
+
+
+
+
+
+############### SPLITTING ###############
+if [ "$stage" == "split" ]; then
+	# from here on out, do everything
+	stage="full"
+fi
+
+if [ "$stage" == "full" ] || [ "$stage" == "split-only" ]; then
+
 	[ ! -s ${genomeid}.polished.cprops ] || [ ! -s ${genomeid}.polished.asm ] && echo >&2 ":( No resolved files are found. Please rerun the pipeline to include the scaffold/scaffold+polish segment. Exiting!" && exit 1
 	
 #	[ $chrom_num -ne 1 ] && bash ${pipeline}/split/run-asm-splitter.sh -c ${chrom_num} -r ${diploid} ${genomeid}.polished.cprops ${genomeid}.polished.asm ${genomeid}.mnd.polished.txt || cp ${genomeid}.polished.cprops ${genomeid}.polished.split.asm
@@ -798,9 +860,20 @@ if [ "$stage" != "seal" ] && [ "$stage" != "merge" ] && [ "$stage" != "finalize"
 	
 fi
 
-############### SEALING ###############
 
-if [ "$stage" != "merge" ] && [ "$stage" != "finalize" ]; then
+
+
+
+
+
+############### SEALING ###############
+if [ "$stage" == "seal" ]; then
+	# from here on out, do everything
+	stage="full"
+fi
+
+if [ "$stage" == "full" ] || [ "$stage" == "seal-only" ]; then
+
 
 	[ ! -s ${genomeid}.split.cprops ] || [ ! -s ${genomeid}.split.asm ] && echo >&2 ":( No split files are found. Please rerun the pipeline to include the split segment. Exiting!" && exit 1
 	
@@ -839,9 +912,20 @@ if [ "$stage" != "merge" ] && [ "$stage" != "finalize" ]; then
 	
 fi
 
-############### MERGING ###############
 
-if [ "$stage" != "finalize" ] && [ $diploid == "true" ]; then
+
+
+
+
+
+
+############### MERGING ###############
+if [ "$stage" == "merge" ]; then
+	# from here on out, do everything
+	stage="full"
+fi
+
+if ([ "$stage" == "full" ] || [ "$stage" == "merge-only" ]) && [ $diploid == "true" ]; then
 	
 	[ ! -s ${genomeid}.rawchrom.assembly ] || [ ! -s ${genomeid}.rawchrom.fasta ] && echo >&2 ":( No raw chromosomal files were found. Please rerun he pipeline to include the seal segment" && exit 1
 	
@@ -867,20 +951,39 @@ if [ "$stage" != "finalize" ] && [ $diploid == "true" ]; then
 	
 	# cleanup
 	rm -r faSplit
+
 fi
 
+
+
+
+
+
+
 ############### FINALIZING ###############
+if [ "$stage" == "final" ]; then
+	# from here on out, do everything
+	stage="full"
+fi
 
 # finalize fasta
 
-echo "###############" >&1
-echo "Finilizing output:" >&1
-bash ${pipeline}/finalize/finalize-output.sh -s ${input_size} -l ${genomeid} -g ${gap_size} ${genomeid}.final.cprops ${genomeid}.final.asm ${genomeid}.final.fasta final
+if [ "$stage" == "full" ] || [ "$stage" == "final-only" ]; then
 
-# if requested build HiC map with added gaps
-if [ "$build_gapped_map" == "true" ]; then
-	awk -f ${pipeline}/utils/convert-assembly-to-cprops-and-asm.awk ${genomeid}.FINAL.assembly
-	bash ${pipeline}/edit/edit-mnd-according-to-new-cprops.sh ${genomeid}.FINAL.cprops ${orig_mnd} > ${genomeid}.FINAL.mnd.txt
-	bash ${pipeline}/visualize/run-assembly-visualizer.sh -p ${parallel} -q ${mapq} -i -c ${genomeid}.FINAL.assembly ${genomeid}.FINAL.mnd.txt
-	rm ${genomeid}.FINAL.mnd.txt ${genomeid}.FINAL.cprops ${genomeid}.FINAL.asm
+	echo "###############" >&1
+	echo "Finalizing output:" >&1
+	bash ${pipeline}/finalize/finalize-output.sh -s ${input_size} -l ${genomeid} -g ${gap_size} ${genomeid}.final.cprops ${genomeid}.final.asm ${genomeid}.final.fasta final
+
+	# if requested build HiC map with added gaps
+	if [ "$build_gapped_map" == "true" ]; then
+		awk -f ${pipeline}/utils/convert-assembly-to-cprops-and-asm.awk ${genomeid}.FINAL.assembly
+		bash ${pipeline}/edit/edit-mnd-according-to-new-cprops.sh ${genomeid}.FINAL.cprops ${orig_mnd} > ${genomeid}.FINAL.mnd.txt
+		bash ${pipeline}/visualize/run-assembly-visualizer.sh -p ${parallel} -q ${mapq} -i -c ${genomeid}.FINAL.assembly ${genomeid}.FINAL.mnd.txt
+		rm ${genomeid}.FINAL.mnd.txt ${genomeid}.FINAL.cprops ${genomeid}.FINAL.asm
+	fi
+
 fi
+
+
+
+
