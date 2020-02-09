@@ -637,7 +637,7 @@ fi
 
 orig_mnd=${genomeid}.mnd.txt
 
-if [ "$stage" == "full" ] && [ "$fast" != "true" ]; then
+if ([ "$stage" == "full" ] || ([ "$stage" == "scaffold-only" ] && [$round_iter -eq 0])) && [ "$fast" != "true" ]; then
 awk -f ${pipeline}/utils/generate-sorted-cprops-file.awk ${orig_fasta} > ${genomeid}.cprops
 fi
 
@@ -778,8 +778,6 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 		bash ${pipeline}/edit/apply-edits-prep-for-next-round.sh -p ${parallel} -r ${ROUND} ${genomeid}".edits.txt" ${orig_cprops} ${orig_mnd}
 
 		[ "$stage" == "scaffold-only" ] && break
-
-	fi
 
 	}
 	done
