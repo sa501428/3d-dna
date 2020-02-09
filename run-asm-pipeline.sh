@@ -637,9 +637,14 @@ fi
 
 orig_mnd=${genomeid}.mnd.txt
 
-if ([ "$stage" == "full" ] || ([ "$stage" == "scaffold-only" ] && [$round_iter -eq 0])) && [ "$fast" != "true" ]; then
+if [ "$stage" == "full" ]  && [ "$fast" != "true" ]; then
 awk -f ${pipeline}/utils/generate-sorted-cprops-file.awk ${orig_fasta} > ${genomeid}.cprops
 fi
+
+if [ "$stage" == "scaffold-only" ] && [ $round_iter -eq 0 ]; then
+awk -f ${pipeline}/utils/generate-sorted-cprops-file.awk ${orig_fasta} > ${genomeid}.cprops
+fi
+
 
 orig_cprops=${genomeid}.cprops
 [ ! -f ${orig_cprops} ] && echo >&2 ":( No cprops file found. Please rerun the pipeline from scratch. Exiting!" && exit 1
