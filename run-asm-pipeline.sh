@@ -785,8 +785,18 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 
 	}
 	done
+	
+	
+	if [ "$stage" == "full" ] ; then
+		ln -sf ${genomeid}.${ROUND}.cprops ${genomeid}.resolved.cprops
+		ln -sf ${genomeid}.${ROUND}.asm ${genomeid}.resolved.asm
+		ln -sf ${genomeid}.${ROUND}_asm.scaffold_track.txt ${genomeid}.resolved_asm.scaffold_track.txt
+		ln -sf ${genomeid}.${ROUND}_asm.superscaf_track.txt ${genomeid}.resolved_asm.superscaf_track.txt
+		ln -sf ${genomeid}.${ROUND}.hic ${genomeid}.resolved.hic
+		#ln -sf ${genomeid}.mnd.${ROUND}.txt ${genomeid}.mnd.resolved.txt
+	fi
 
-	if [ $round_iter -eq $MAX_ROUNDS ]; then
+	if [ "$stage" == "scaffold-only" ] && [ $round_iter -eq $MAX_ROUNDS ]; then
 		ln -sf ${genomeid}.${ROUND}.cprops ${genomeid}.resolved.cprops
 		ln -sf ${genomeid}.${ROUND}.asm ${genomeid}.resolved.asm
 		ln -sf ${genomeid}.${ROUND}_asm.scaffold_track.txt ${genomeid}.resolved_asm.scaffold_track.txt
