@@ -683,7 +683,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 
 	
 	ROUND=0
-	if ["$stage" == "scaffold-only"]; then
+	if [ "$stage" == "scaffold-only" ]; then
 		ROUND=$round_iter
 	fi
 
@@ -807,7 +807,7 @@ if [ "$stage" == "polish" ]; then
 	stage="full"
 fi
 
-if [ "$stage" == "full" ] || [ "$stage" == "polish-only" ] ]; then
+if [ "$stage" == "full" ] || [ "$stage" == "polish-only" ]; then
 
 	[ ! -f ${genomeid}.resolved.cprops ] || [ ! -f ${genomeid}.resolved.asm ] || [ ! -f ${genomeid}.resolved.hic ] && echo >&2 ":( No resolved files are found. Please rerun the pipeline to include the scaffold segment. Exiting!" && exit 1
 
