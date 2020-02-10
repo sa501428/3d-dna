@@ -786,7 +786,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 	}
 	done
 
-	if [ $ROUND -eq $MAX_ROUNDS ]; then
+	if [ $round_iter -eq $MAX_ROUNDS ]; then
 		ln -sf ${genomeid}.${ROUND}.cprops ${genomeid}.resolved.cprops
 		ln -sf ${genomeid}.${ROUND}.asm ${genomeid}.resolved.asm
 		ln -sf ${genomeid}.${ROUND}_asm.scaffold_track.txt ${genomeid}.resolved_asm.scaffold_track.txt
