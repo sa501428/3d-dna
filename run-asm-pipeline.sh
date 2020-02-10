@@ -727,8 +727,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 		echo "...detecting misjoins in round ${ROUND} assembly:" >&1
 
 		if [ "$use_neural_net" == "true" ]; then
-			bash ${pipeline}/deep_edit/run-deep-mismatch-detector.sh -r 1000 
-			../3d-dna/deep_edit/run-deep-mismatch-detector.sh -r 1000 ${genomeid}.${ROUND}.hic
+			bash ${pipeline}/deep_edit/run-deep-mismatch-detector.sh -r 1000 ${genomeid}.${ROUND}.hic
 		else
 			bash ${pipeline}/edit/run-mismatch-detector.sh -p ${parallel} -c ${editor_saturation_centile} -w ${editor_coarse_resolution} -d ${editor_coarse_region} -k ${editor_coarse_stringency} -n ${editor_fine_resolution} ${genomeid}.${ROUND}.hic
 
