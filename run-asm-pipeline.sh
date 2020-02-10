@@ -716,7 +716,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 			echo "...visualizing round ${ROUND} results:" >&1
 			bash ${pipeline}/visualize/run-asm-visualizer.sh -p ${parallel} -q ${mapq} -i -c ${current_cprops} ${genomeid}.${ROUND}.asm ${current_mnd}
 #            rm temp.${genomeid}.${ROUND}.asm_mnd.txt
-			rm ${current_mnd}
+			#rm ${current_mnd}
 		# early exit on round zero if requested
 			[ "$early" == "true" ] && exit 0
 		fi
