@@ -687,7 +687,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 		ROUND=$round_iter
 	fi
 
-	if [ "$fast" == "false" ] && [ "$stage" == "full" ]; then
+	if [ "$fast" == "false" ] && [ $ROUND -eq 0 ]; then
 		if [ -f ${genomeid}.*.cprops ] || [ -f ${genomeid}.mnd.*.txt ] ; then
 			echo >&2 ":( Please remove or rename files ${genomeid}.*.cprops ${genomeid}.mnd.*.txt. Exiting!" && exit
 		else
