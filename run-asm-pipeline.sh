@@ -735,9 +735,10 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 			mv depletion_score_wide.wig depletion_score_wide.at.step.${ROUND}.wig
 			mv depletion_score_narrow.wig depletion_score_narrow.at.step.${ROUND}.wig
 			mv mismatch_wide.bed mismatch_wide.at.step.${ROUND}.bed
-			mv mismatch_narrow.bed mismatch_narrow.at.step.${ROUND}.bed
 
 		fi
+		
+		mv mismatch_narrow.bed mismatch_narrow.at.step.${ROUND}.bed
 
 	# annotate repeats by coverage analysis
 		bash ${pipeline}/edit/run-coverage-analyzer.sh -w ${editor_coarse_resolution} -t ${editor_repeat_coverage} ${genomeid}.${ROUND}.hic
