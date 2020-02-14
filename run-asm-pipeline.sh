@@ -679,8 +679,7 @@ if [ "$stage" == "scaffold" ]; then
 	stage="full"
 fi
 
-if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
-
+if [ "$stage" == "full" ] || ([ "$stage" == "scaffold-only" ] && [ ! -f no_more_edits ]); then
 	
 	ROUND=0
 	if [ "$stage" == "scaffold-only" ]; then
@@ -762,7 +761,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 		
 		test=`wc -l < edits.for.step.$((ROUND+1)).txt`
 	
-		[ $test -eq 1 ] && echo >&1 ":) No more input edits to be done. Moving to polishing!" && rm edits.for.step.$((ROUND+1)).txt && break
+		[ $test -eq 1 ] && echo >&1 ":) No more input edits to be done. Moving to polishing!" && touch no_more_edits && rm edits.for.step.$((ROUND+1)).txt && break
 
 	# move on to the next step	
 		ROUND=$((ROUND+1))
@@ -787,17 +786,7 @@ if [ "$stage" == "full" ] || [ "$stage" == "scaffold-only" ]; then
 	}
 	done
 	
-	
-	if [ "$stage" == "full" ] ; then
-		ln -sf ${genomeid}.${ROUND}.cprops ${genomeid}.resolved.cprops
-		ln -sf ${genomeid}.${ROUND}.asm ${genomeid}.resolved.asm
-		ln -sf ${genomeid}.${ROUND}_asm.scaffold_track.txt ${genomeid}.resolved_asm.scaffold_track.txt
-		ln -sf ${genomeid}.${ROUND}_asm.superscaf_track.txt ${genomeid}.resolved_asm.superscaf_track.txt
-		ln -sf ${genomeid}.${ROUND}.hic ${genomeid}.resolved.hic
-		#ln -sf ${genomeid}.mnd.${ROUND}.txt ${genomeid}.mnd.resolved.txt
-	fi
-
-	if [ "$stage" == "scaffold-only" ] && [ $round_iter -eq $MAX_ROUNDS ]; then
+	if [ "$stage" == "full" ] || ([ "$stage" == "scaffold-only" ] && [ $round_iter -eq $MAX_ROUNDS ])  || [ -f no_more_edits ]; then
 		ln -sf ${genomeid}.${ROUND}.cprops ${genomeid}.resolved.cprops
 		ln -sf ${genomeid}.${ROUND}.asm ${genomeid}.resolved.asm
 		ln -sf ${genomeid}.${ROUND}_asm.scaffold_track.txt ${genomeid}.resolved_asm.scaffold_track.txt
@@ -965,10 +954,6 @@ if ([ "$stage" == "full" ] || [ "$stage" == "merge-only" ]) && [ $diploid == "tr
 	rm -r faSplit
 
 fi
-
-
-
-
 
 
 
